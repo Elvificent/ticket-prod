@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 import gradio as gr
 from langchain_core.language_models.llms import LLM
-from typing import List, Optional
+from typing import List, Optional, Any
 
 # Configuration
 warnings.filterwarnings('ignore')
@@ -66,9 +66,10 @@ DEEPSEEK_CHATBOT = gr.load(
 )
 
 class GradioDeepSeekLLM(LLM):
+    gradio_model: Any  # Declare as class attribute for Pydantic
+
     def __init__(self, gradio_model):
-        super().__init__()
-        self.gradio_model = gradio_model
+        super().__init__(gradio_model=gradio_model)
 
     @property
     def _llm_type(self) -> str:
