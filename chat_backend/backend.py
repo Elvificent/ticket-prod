@@ -60,17 +60,21 @@ qa_chain = None
 embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 # Set OpenRouter API base
-openai.api_key = "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"  # Or set your key directly
+openai.api_key = "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"  # Or set your key directly
 openai.api_url = "https://openrouter.ai/api/v1"
 
 # Function to call DeepSeek via OpenRouter
 def ask_deepseek(prompt):
-    response = openai.ChatCompletion.create(
-        model="deepseek-chat",  # or another DeepSeek model name
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7,
-    )
-    return response.choices[0].message["content"]
+    try:
+        response = openai.ChatCompletion.create(
+            model="deepseek-ai/deepseek-chat",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+        )
+        return response.choices[0].message["content"]
+    except Exception as e:
+        print(f"API Error: {e}")
+        return "Sorry, I'm having trouble connecting to the AI service."
 
 class OpenRouterDeepSeekLLM(LLM):
     def __init__(self):
