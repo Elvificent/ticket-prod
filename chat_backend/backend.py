@@ -60,8 +60,8 @@ qa_chain = None
 embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 # Set OpenRouter API base
-openai.api_base = "https://openrouter.ai/api/v1"
 openai.api_key = "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"  # Or set your key directly
+openai.api_url = "https://openrouter.ai/api/v1"
 
 # Function to call DeepSeek via OpenRouter
 def ask_deepseek(prompt):
