@@ -5,7 +5,6 @@ import requests
 from flask import Flask, request, jsonify, Blueprint
 from flask_cors import CORS
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain_community.vectorstores import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains import RetrievalQA
@@ -27,6 +26,7 @@ from pathlib import Path
 import gradio as gr
 from langchain_core.language_models.llms import LLM
 from typing import List, Optional, Any
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 # Configuration
 warnings.filterwarnings('ignore')
@@ -57,7 +57,7 @@ MAX_BATCH_SIZE = 5000  # Safe value below Chroma's limit of 5461
 # Global State
 vectorstore = None
 qa_chain = None
-embedding = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 # Load DeepSeek model once at startup
 DEEPSEEK_CHATBOT = gr.load(
