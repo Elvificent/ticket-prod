@@ -25,6 +25,8 @@ import traceback
 import sys
 from pathlib import Path
 import gradio as gr
+from langchain_core.language_models.llms import LLM
+from typing import List, Optional
 
 # Configuration
 warnings.filterwarnings('ignore')
@@ -62,6 +64,18 @@ DEEPSEEK_CHATBOT = gr.load(
     "models/deepseek-ai/DeepSeek-R1-0528",
     provider="nebius",
 )
+
+class GradioDeepSeekLLM(LLM):
+    def __init__(self, gradio_model):
+        super().__init__()
+        self.gradio_model = gradio_model
+
+    @property
+    def _llm_type(self) -> str:
+        return "gradio-deepseek"
+
+    def _call(self, prompt: str, stop: Optional[List[str]] = None) -> str:
+        return self.gradio_model(prompt)
 
 # --------------------------
 # Core Utility Functions
@@ -341,8 +355,7 @@ def initialize_qa_chain():
     """Initialize QA chain with proper prompt and configuration"""
     from langchain.prompts import PromptTemplate
     
-    # Use DeepSeek via Gradio as the LLM
-    llm = lambda prompt: DEEPSEEK_CHATBOT(prompt)
+    llm = GradioDeepSeekLLM(DEEPSEEK_CHATBOT)
 
     retriever = vectorstore.as_retriever(
         search_type="mmr",
