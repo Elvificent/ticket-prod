@@ -2,7 +2,7 @@
 import os
 import time
 import requests
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Blueprint
 from flask_cors import CORS
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
@@ -32,9 +32,10 @@ os.environ["GOOGLE_API_KEY"] = "AIzaSyAllDb85-EYZSDQjd8tVyF_Kg5WG8HPOjc"
 
 # Initialize Flask
 app = Flask(__name__)
+api_bp = Blueprint('api_bp', __name__)
 CORS(app, resources={
     r"/*": {
-        "origins": ["http://localhost:5173"],
+        "origins": ["http://localhost:5173", "http://43.228.124.29"],
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization", "Accept"],
         "supports_credentials": True
@@ -380,7 +381,7 @@ def initialize_qa_chain():
 # API Endpoints (All Original Endpoints)
 # --------------------------
 
-@app.route('/query', methods=['POST'])
+@api_bp.route('/query', methods=['POST'])
 @token_required
 def query(current_user_email):
     """Handle user queries with source documents"""
@@ -491,7 +492,7 @@ def query(current_user_email):
             cursor.close()
             connection.close()
 
-@app.route('/debug_collection', methods=['GET'])
+@api_bp.route('/debug_collection', methods=['GET'])
 def debug_collection():
     """Inspect the Chroma collection"""
     if not vectorstore:
@@ -504,7 +505,7 @@ def debug_collection():
         "sample_ids": collection.get(limit=2)['ids']
     })
 
-@app.route('/debug_query', methods=['POST'])
+@api_bp.route('/debug_query', methods=['POST'])
 def debug_query():
     """Test raw retrieval"""
     data = request.json
@@ -524,7 +525,7 @@ def debug_query():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/verify_persistence', methods=['GET'])
+@api_bp.route('/verify_persistence', methods=['GET'])
 def verify_persistence():
     """Verify that Chroma DB is properly persisted"""
     if not vectorstore:
@@ -550,7 +551,7 @@ def verify_persistence():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/health', methods=['GET'])
+@api_bp.route('/health', methods=['GET'])
 def health_check():
     """System health check"""
     return jsonify({
@@ -591,6 +592,9 @@ def initialize_app():
     atexit.register(cleanup_resources)
     print("\n🏁 Application ready")
     return True
+
+# Register the Blueprint with the prefix '/chatapi'
+app.register_blueprint(api_bp, url_prefix='/chatapi')
 
 # --------------------------
 # Main Execution

@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Create axios instance with base configuration
 const api = axios.create({
-  baseURL: 'http://localhost:8082/api',  // Update to point to your backend server
+  baseURL: '/api',  // Use relative path for production (Nginx will proxy to backend)
   headers: {
     'Content-Type': 'application/json',
   },
@@ -499,8 +499,8 @@ export const chatbotAPI = {
   // Send a query to the chatbot
   sendQuery: async (query) => {
     try {
-      // Use the Python backend on port 5000
-      const response = await axios.post('http://localhost:5000/query', { query }, {
+      // Use the Python backend via Nginx proxy
+      const response = await axios.post('/chatapi/query', { query }, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
           'Content-Type': 'application/json'
