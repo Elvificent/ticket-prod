@@ -23,7 +23,7 @@ import warnings
 import traceback
 import sys
 from pathlib import Path
-import gradio as gr
+import openai
 from langchain_core.language_models.llms import LLM
 from typing import List, Optional, Any
 from langchain_community.embeddings import HuggingFaceEmbeddings
@@ -59,24 +59,29 @@ vectorstore = None
 qa_chain = None
 embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-# Load DeepSeek model once at startup
-DEEPSEEK_CHATBOT = gr.load(
-    "models/deepseek-ai/DeepSeek-R1-0528",
-    provider="nebius",
-)
+# Set OpenRouter API base
+openai.api_base = "https://openrouter.ai/api/v1"
+openai.api_key = "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"  # Or set your key directly
 
-class GradioDeepSeekLLM(LLM):
-    gradio_model: Any  # Declare as class attribute for Pydantic
+# Function to call DeepSeek via OpenRouter
+def ask_deepseek(prompt):
+    response = openai.ChatCompletion.create(
+        model="deepseek-chat",  # or another DeepSeek model name
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7,
+    )
+    return response.choices[0].message["content"]
 
-    def __init__(self, gradio_model):
-        super().__init__(gradio_model=gradio_model)
+class OpenRouterDeepSeekLLM(LLM):
+    def __init__(self):
+        super().__init__()
 
     @property
     def _llm_type(self) -> str:
-        return "gradio-deepseek"
+        return "openrouter-deepseek"
 
     def _call(self, prompt: str, stop: Optional[List[str]] = None) -> str:
-        return self.gradio_model(prompt)
+        return ask_deepseek(prompt)
 
 # --------------------------
 # Core Utility Functions
@@ -356,7 +361,7 @@ def initialize_qa_chain():
     """Initialize QA chain with proper prompt and configuration"""
     from langchain.prompts import PromptTemplate
     
-    llm = GradioDeepSeekLLM(DEEPSEEK_CHATBOT)
+    llm = OpenRouterDeepSeekLLM()
 
     retriever = vectorstore.as_retriever(
         search_type="mmr",
