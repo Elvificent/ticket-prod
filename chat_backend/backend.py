@@ -24,6 +24,7 @@ import warnings
 import traceback
 import sys
 from pathlib import Path
+import gradio as gr
 
 # Configuration
 warnings.filterwarnings('ignore')
@@ -55,6 +56,12 @@ MAX_BATCH_SIZE = 5000  # Safe value below Chroma's limit of 5461
 vectorstore = None
 qa_chain = None
 embedding = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+
+# Load DeepSeek model once at startup
+DEEPSEEK_CHATBOT = gr.load(
+    "models/deepseek-ai/DeepSeek-R1-0528",
+    provider="nebius",
+)
 
 # --------------------------
 # Core Utility Functions
@@ -334,11 +341,8 @@ def initialize_qa_chain():
     """Initialize QA chain with proper prompt and configuration"""
     from langchain.prompts import PromptTemplate
     
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
-        temperature=0.2,
-        convert_system_message_to_human=True
-    )
+    # Use DeepSeek via Gradio as the LLM
+    llm = lambda prompt: DEEPSEEK_CHATBOT(prompt)
 
     retriever = vectorstore.as_retriever(
         search_type="mmr",
