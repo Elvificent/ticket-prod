@@ -60,14 +60,14 @@ qa_chain = None
 embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 # Set OpenRouter API base
-openai.api_key = "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"  # Or set your key directly
-openai.api_url = "https://openrouter.ai/api/v1"
+openai.api_key = "sk-0150beb86fb14635bbb93db545402548"  # Or set your key directly
+openai.api_base = "https://api.deepseek.com/v1"
 
 # Function to call DeepSeek via OpenRouter
 def ask_deepseek(prompt):
     try:
         response = openai.ChatCompletion.create(
-            model="deepseek-ai/deepseek-chat",
+            model="deepseek-chat",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
         )

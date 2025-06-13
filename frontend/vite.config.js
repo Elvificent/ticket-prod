@@ -2,12 +2,21 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
+  base: '/',
   plugins: [react()],
   server: {
-    host: '0.0.0.0',
+    host: '127.0.0.1',
+    port: 5173,
+    strictPort: true,
+    // Add allowed hosts here
+    allowedHosts: [
+      'elvificent.com',
+      'www.elvificent.com',
+      'localhost' // For local development
+    ],
     hmr: {
-      host: '43.228.124.29', // your public IP
-      port: 5173
+      clientPort: 80, // Important for Cloudflare proxy
+      protocol: 'ws' // Use 'ws' not 'wss' when behind Cloudflare
     },
     proxy: {
       '/api': {
