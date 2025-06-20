@@ -10,6 +10,7 @@ export default defineConfig({
     strictPort: true,
     // Add allowed hosts here
     allowedHosts: [
+      'chat.elvificent.com',
       'elvificent.com',
       'www.elvificent.com',
       'localhost' // For local development
