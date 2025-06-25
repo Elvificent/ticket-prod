@@ -8,6 +8,8 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains import RetrievalQA
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_core.language_models.llms import LLM
 import mysql.connector
 import json
 from datetime import datetime, timedelta
@@ -23,10 +25,9 @@ import warnings
 import traceback
 import sys
 from pathlib import Path
+from urllib.parse import unquote
 import openai
-from langchain_core.language_models.llms import LLM
-from typing import List, Optional, Any
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from typing import Optional, List
 
 # Configuration
 warnings.filterwarnings('ignore')
@@ -35,11 +36,11 @@ os.environ["GOOGLE_API_KEY"] = "AIzaSyAllDb85-EYZSDQjd8tVyF_Kg5WG8HPOjc"
 
 # Initialize Flask
 app = Flask(__name__)
-api_bp = Blueprint('api_bp', __name__)
+chatapi_bp = Blueprint('chatapi', __name__)
 CORS(app, resources={
     r"/*": {
-        "origins": ["http://localhost:5173", "http://43.228.124.29"],
-        "methods": ["GET", "POST", "OPTIONS"],
+        "origins": ["http://localhost:5173", "http://43.228.124.29", "https://chat.elvificent.com", "https://elvificent.com"],
+        "methods": ["GET", "POST", "OPTIONS", "DELETE"],
         "allow_headers": ["Content-Type", "Authorization", "Accept"],
         "supports_credentials": True
     }
@@ -59,19 +60,36 @@ vectorstore = None
 qa_chain = None
 embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-# Set OpenRouter API base
-openai.api_key = "sk-0150beb86fb14635bbb93db545402548"  # Or set your key directly
+# Set OpenRouter API base for DeepSeek
+openai.api_key = "sk-e6b172c68d2b4115aeeae1f886112461"  # Or set your key directly
 openai.api_base = "https://api.deepseek.com/v1"
 
 # Function to call DeepSeek via OpenRouter
+
 def ask_deepseek(prompt):
     try:
         response = openai.ChatCompletion.create(
             model="deepseek-chat",
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant. Respond in plain text without any formatting like asterisks, parentheses, or markdown."},
+                {"role": "user", "content": prompt}
+            ],
             temperature=0.7,
         )
-        return response.choices[0].message["content"]
+        answer = response.choices[0].message["content"]
+        
+        # Clean up the response - remove common formatting artifacts
+        answer = answer.replace("*", "")  # Remove asterisks
+        answer = answer.replace("_(", "").replace(")_", "")  # Remove parenthetical thoughts
+        answer = answer.replace("**", "")  # Remove bold markdown
+        
+        # Remove content within parentheses that looks like instructions
+        import re
+        answer = re.sub(r'\([^)]*guidelines[^)]*\)', '', answer, flags=re.IGNORECASE)
+        answer = re.sub(r'\([^)]*keeping it[^)]*\)', '', answer, flags=re.IGNORECASE)
+        answer = re.sub(r'\([^)]*aligned with[^)]*\)', '', answer, flags=re.IGNORECASE)
+        
+        return answer.strip()
     except Exception as e:
         print(f"API Error: {e}")
         return "Sorry, I'm having trouble connecting to the AI service."
@@ -127,13 +145,13 @@ def kill_processes_using_path(path):
             # Check for open files
             for f in proc.open_files():
                 if abs_path in os.path.abspath(f.path):
-                    print(f"🔫 Killing process {proc.pid} ({proc.name()}) using {f.path}")
+                    print(f"ðŸ”« Killing process {proc.pid} ({proc.name()}) using {f.path}")
                     proc.kill()
                     time.sleep(0.5)
                     break # Process killed, move to next process
             # Additionally, check if the process's current working directory is inside the path
             if proc.cwd() and abs_path in os.path.abspath(proc.cwd()):
-                print(f"🔫 Killing process {proc.pid} ({proc.name()}) with CWD in {abs_path}")
+                print(f"ðŸ”« Killing process {proc.pid} ({proc.name()}) with CWD in {abs_path}")
                 proc.kill()
                 time.sleep(0.5)
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, FileNotFoundError) as e:
@@ -153,7 +171,7 @@ def force_delete_directory(path):
                 shutil.rmtree(path, ignore_errors=True)
                 return True
         except Exception as e:
-            print(f"⚠️ Delete attempt {attempt+1} failed: {e}")
+            print(f"âš ï¸ Delete attempt {attempt+1} failed: {e}")
             time.sleep(2)
     return False
 
@@ -162,13 +180,13 @@ def cleanup_resources():
     global vectorstore
     if vectorstore is not None:
         try:
-            print("🧹 Cleaning up Chroma resources...")
+            print("ðŸ§¹ Cleaning up Chroma resources...")
             vectorstore.persist()
             if hasattr(vectorstore, '_client'):
                 vectorstore._client.persist()
                 vectorstore._client.close()
         except Exception as e:
-            print(f"⚠️ Cleanup error: {e}")
+            print(f"âš ï¸ Cleanup error: {e}")
         vectorstore = None
     gc.collect()
 
@@ -182,12 +200,12 @@ def initialize_chroma():
     try:
         # Debug directory contents
         if os.path.exists(CHROMA_DIR):
-            print(f"📁 Chroma directory contents: {os.listdir(CHROMA_DIR)}")
+            print(f"ðŸ“ Chroma directory contents: {os.listdir(CHROMA_DIR)}")
         # Try to load existing DB (check for chroma.sqlite3 or any subdirectory)
         has_sqlite = os.path.exists(os.path.join(CHROMA_DIR, "chroma.sqlite3"))
         has_collection_dir = any(os.path.isdir(os.path.join(CHROMA_DIR, f)) for f in os.listdir(CHROMA_DIR)) if os.path.exists(CHROMA_DIR) else False
         if os.path.exists(CHROMA_DIR) and (has_sqlite or has_collection_dir):
-            print("🔄 Attempting to load existing Chroma DB...")
+            print("ðŸ”„ Attempting to load existing Chroma DB...")
             vectorstore = Chroma(
                 persist_directory=CHROMA_DIR,
                 embedding_function=embedding,
@@ -196,18 +214,18 @@ def initialize_chroma():
             # Verify the collection exists
             if hasattr(vectorstore, '_client'):
                 collections = vectorstore._client.list_collections()
-                print(f"📚 Available collections: {[c.name for c in collections]}")
+                print(f"ðŸ“š Available collections: {[c.name for c in collections]}")
                 if COLLECTION_NAME not in [c.name for c in collections]:
-                    print(f"⚠️ Collection '{COLLECTION_NAME}' not found")
+                    print(f"âš ï¸ Collection '{COLLECTION_NAME}' not found")
                     return build_chroma_db()
             doc_count = vectorstore._collection.count()
-            print(f"✅ Loaded existing Chroma DB (Documents: {doc_count})")
+            print(f"âœ… Loaded existing Chroma DB (Documents: {doc_count})")
             return True
         # If no DB exists, create a new one
-        print("🆕 No existing Chroma DB found - creating new one...")
+        print("ðŸ†• No existing Chroma DB found - creating new one...")
         return build_chroma_db()
     except Exception as e:
-        print(f"❌ Chroma initialization failed: {e}")
+        print(f"âŒ Chroma initialization failed: {e}")
         traceback.print_exc()
         return False
 
@@ -218,9 +236,9 @@ def build_chroma_db():
         with chroma_lock():
             # Clear existing DB if it exists
             if os.path.exists(CHROMA_DIR):
-                print("🧹 Cleaning existing Chroma DB...")
+                print("ðŸ§¹ Cleaning existing Chroma DB...")
                 if not force_delete_directory(CHROMA_DIR):
-                    print("❌ Failed to clean existing DB")
+                    print("âŒ Failed to clean existing DB")
                     return False
                 os.makedirs(CHROMA_DIR, exist_ok=True)
 
@@ -228,7 +246,7 @@ def build_chroma_db():
             pdf_files = [os.path.join(PDF_DIR, f) for f in os.listdir(PDF_DIR) 
                         if f.endswith('.pdf')]
             if not pdf_files:
-                print("❌ No PDF files found in directory")
+                print("âŒ No PDF files found in directory")
                 # If no PDFs, create an empty Chroma DB
                 vectorstore = Chroma(
                     persist_directory=CHROMA_DIR,
@@ -236,14 +254,14 @@ def build_chroma_db():
                     collection_name=COLLECTION_NAME
                 )
                 vectorstore.persist()
-                print("✅ Created empty Chroma DB as no PDF files were found.")
+                print("âœ… Created empty Chroma DB as no PDF files were found.")
                 return True
 
             # Process PDFs with progress reporting
             all_docs = []
             for file in pdf_files:
                 try:
-                    print(f"📄 Processing {os.path.basename(file)}...")
+                    print(f"ðŸ“„ Processing {os.path.basename(file)}...")
                     loader = PyPDFLoader(file)
                     pages = loader.load()
                     splitter = RecursiveCharacterTextSplitter(
@@ -255,11 +273,11 @@ def build_chroma_db():
                     all_docs.extend(chunks)
                     print(f"   Added {len(chunks)} chunks (Total: {len(all_docs)})")
                 except Exception as e:
-                    print(f"❌ Failed to process {file}: {e}")
+                    print(f"âŒ Failed to process {file}: {e}")
                     continue
 
             if not all_docs:
-                print("❌ No documents processed from PDFs")
+                print("âŒ No documents processed from PDFs")
                 # If no documents processed, create an empty Chroma DB
                 vectorstore = Chroma(
                     persist_directory=CHROMA_DIR,
@@ -267,11 +285,11 @@ def build_chroma_db():
                     collection_name=COLLECTION_NAME
                 )
                 vectorstore.persist()
-                print("✅ Created empty Chroma DB as no documents were processed from PDFs.")
+                print("âœ… Created empty Chroma DB as no documents were processed from PDFs.")
                 return True
 
             # Create new persistent DB with batch processing
-            print("🏗️ Building Chroma DB in batches...")
+            print("ðŸ—ï¸ Building Chroma DB in batches...")
             
             # Create initial empty collection
             vectorstore = Chroma(
@@ -290,23 +308,23 @@ def build_chroma_db():
                 time.sleep(1)  # Brief pause between batches
             
             # Explicit persist and verify
-            print("💾 Persisting Chroma DB...")
+            print("ðŸ’¾ Persisting Chroma DB...")
             vectorstore.persist()
             time.sleep(2)  # Allow time for persistence to complete
             
             # Verify
             doc_count = vectorstore._collection.count()
-            print(f"🔍 Verification: {doc_count} documents in DB")
+            print(f"ðŸ” Verification: {doc_count} documents in DB")
             
             if doc_count != len(all_docs):
-                print(f"❌ Document count mismatch: expected {len(all_docs)}, got {doc_count}")
+                print(f"âŒ Document count mismatch: expected {len(all_docs)}, got {doc_count}")
                 return False
                 
-            print(f"✅ Successfully built Chroma DB with {doc_count} documents")
+            print(f"âœ… Successfully built Chroma DB with {doc_count} documents")
             return True
             
     except Exception as e:
-        print(f"❌ Build failed: {e}")
+        print(f"âŒ Build failed: {e}")
         traceback.print_exc()
         return False
 
@@ -377,16 +395,15 @@ def initialize_qa_chain():
     )
 
     # Define the prompt template
-    template = """You are a friendly Techcare support bot. Guidelines:
-    - Be polite and professional
-    - Use the context below to answer
-    - If unsure, offer to connect to a human
+    template = """You are a helpful TechCare support assistant. Please provide a direct, clear response to the user's question.
 
-    Context: {context}
+IMPORTANT: Respond in plain text only. Do not use asterisks, parentheses for thoughts, or markdown formatting.
 
-    Question: {question}
+Context: {context}
 
-    Helpful Answer:"""
+Question: {question}
+
+Answer (respond naturally and directly):"""
 
     QA_PROMPT = PromptTemplate(
         template=template,
@@ -408,7 +425,7 @@ def initialize_qa_chain():
 # API Endpoints (All Original Endpoints)
 # --------------------------
 
-@api_bp.route('/query', methods=['POST'])
+@chatapi_bp.route('/query', methods=['POST'])
 @token_required
 def query(current_user_email):
     """Handle user queries with source documents"""
@@ -465,7 +482,7 @@ def query(current_user_email):
         full_query = f"{conversation_context}\n\nCurrent Question: {query_text}"
 
         # Get response with source documents
-        print(f"\n🔍 Query: {query_text}")
+        print(f"\nðŸ” Query: {query_text}")
         try:
             # Pass only the query to the QA chain
             response = qa_chain({"query": full_query})
@@ -473,12 +490,12 @@ def query(current_user_email):
             answer = response["result"]
             sources = response.get("source_documents", [])
             
-            print(f"📚 Retrieved {len(sources)} source chunks")
+            print(f"ðŸ“š Retrieved {len(sources)} source chunks")
             for i, source in enumerate(sources):
                 print(f"   Source {i+1}: {source.page_content[:200]}...")
                 
         except Exception as e:
-            print(f"❌ QA error: {e}")
+            print(f"âŒ QA error: {e}")
             traceback.print_exc()
             answer = "I'm having trouble processing your request. Please try again."
             sources = []
@@ -508,10 +525,10 @@ def query(current_user_email):
         })
 
     except mysql.connector.Error as err:
-        print(f"❌ Database error: {err}")
+        print(f"âŒ Database error: {err}")
         return jsonify({"error": "Database error"}), 500
     except Exception as e:
-        print(f"❌ Unexpected error: {e}")
+        print(f"âŒ Unexpected error: {e}")
         traceback.print_exc()
         return jsonify({"error": "Internal server error"}), 500
     finally:
@@ -519,7 +536,7 @@ def query(current_user_email):
             cursor.close()
             connection.close()
 
-@api_bp.route('/debug_collection', methods=['GET'])
+@chatapi_bp.route('/debug_collection', methods=['GET'])
 def debug_collection():
     """Inspect the Chroma collection"""
     if not vectorstore:
@@ -532,7 +549,7 @@ def debug_collection():
         "sample_ids": collection.get(limit=2)['ids']
     })
 
-@api_bp.route('/debug_query', methods=['POST'])
+@chatapi_bp.route('/debug_query', methods=['POST'])
 def debug_query():
     """Test raw retrieval"""
     data = request.json
@@ -552,7 +569,7 @@ def debug_query():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@api_bp.route('/verify_persistence', methods=['GET'])
+@chatapi_bp.route('/verify_persistence', methods=['GET'])
 def verify_persistence():
     """Verify that Chroma DB is properly persisted"""
     if not vectorstore:
@@ -578,7 +595,7 @@ def verify_persistence():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@api_bp.route('/health', methods=['GET'])
+@chatapi_bp.route('/health', methods=['GET'])
 def health_check():
     """System health check"""
     return jsonify({
@@ -607,21 +624,64 @@ def get_db_connection():
 
 def initialize_app():
     """Initialize all application components"""
-    print("\n🚀 Initializing application...")
+    print("\nðŸš€ Initializing application...")
     setup_directories()
     
     if not initialize_chroma():
-        print("❌ Failed to initialize Chroma DB")
+        print("âŒ Failed to initialize Chroma DB")
         return False
     
     global qa_chain
     qa_chain = initialize_qa_chain()
     atexit.register(cleanup_resources)
-    print("\n🏁 Application ready")
+    print("\nðŸ Application ready")
     return True
 
-# Register the Blueprint with the prefix '/chatapi'
-app.register_blueprint(api_bp, url_prefix='/chatapi')
+# --------------------------
+# RAG File Management Endpoints
+# --------------------------
+
+@chatapi_bp.route('/rag/files', methods=['GET'])
+@token_required
+def list_rag_files(current_user_email):
+    """Return list of PDF files"""
+    files = [f for f in os.listdir(PDF_DIR) if f.lower().endswith('.pdf')]
+    return jsonify(files)
+
+@chatapi_bp.route('/rag/files', methods=['POST'])
+@token_required
+def upload_rag_file(current_user_email):
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    if not file.filename.lower().endswith('.pdf'):
+        return jsonify({'error': 'Only PDF allowed'}), 400
+    saved_path = os.path.join(PDF_DIR, file.filename)
+    file.save(saved_path)
+    return jsonify({'message': 'File uploaded'}), 201
+
+@chatapi_bp.route('/rag/files/<path:filename>', methods=['DELETE'])
+@token_required
+def delete_rag_file(current_user_email, filename):
+    safe_name = os.path.basename(unquote(filename))
+    target_path = os.path.join(PDF_DIR, safe_name)
+    if os.path.exists(target_path):
+        os.remove(target_path)
+        return jsonify({'message': 'Deleted'}), 200
+    return jsonify({'error': 'File not found'}), 404
+
+@chatapi_bp.route('/rag/restart', methods=['POST'])
+@token_required
+def restart_rag(current_user_email):
+    success = build_chroma_db()
+    if success:
+        return jsonify({'message': 'RAG restarted'}), 200
+    return jsonify({'error': 'Failed to restart'}), 500
+
+# Register the Blueprint
+app.register_blueprint(chatapi_bp, url_prefix='/chatapi')
 
 # --------------------------
 # Main Execution
@@ -631,14 +691,14 @@ if __name__ == '__main__':
     try:
         if initialize_app():
             port = int(os.environ.get('PORT', 5000))
-            print(f"\n🌐 Server running on http://0.0.0.0:{port}")
+            print(f"\nðŸŒ Server running on http://0.0.0.0:{port}")
             app.run(host='0.0.0.0', port=port)
         else:
-            print("\n💥 Failed to initialize application")
+            print("\nðŸ’¥ Failed to initialize application")
             sys.exit(1)
     except KeyboardInterrupt:
-        print("\n🛑 Server stopped")
+        print("\nðŸ›‘ Server stopped")
     except Exception as e:
-        print(f"\n💥 Fatal error: {e}")
+        print(f"\nðŸ’¥ Fatal error: {e}")
         traceback.print_exc()
         sys.exit(1)
